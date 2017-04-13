@@ -17,16 +17,17 @@
 #define GNU
 //#define TURBO
 
-#include <iostream.h>
-#include <iomanip.h>
+#include <iostream>
+#include <iomanip>
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-
+#include <ctime>
 #define BOOLEAN int
 #define TRUE 1
 #define FALSE 0
 
+using namespace std;
 //-----------------------------------------------------------------------
 // The time, a "keep going" control, and some constants of the model.
 //
@@ -679,12 +680,14 @@ int main()
 	//------------------------
 	// The "clock driver" loop
 	//------------------------
-
+	time_t t1 = time(NULL), t2;
 	while (simulating) {
 		eventClass * currentEvent = eventList -> getNext ();
 		simulationTime = currentEvent -> whatTime();
 		currentEvent -> makeItHappen();
 	}
-
+	t2 = time(NULL);
+	double dif = difftime(t1, t2);//CLOCKS_PER_SEC;
+	cout<<"time running = "<<dif<<endl;
 	return 0;
 }
