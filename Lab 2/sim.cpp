@@ -22,12 +22,15 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include <ctime>
+#include <stack>
+#include <queue>
+#include <vector>
+using namespace std;
+
 #define BOOLEAN int
 #define TRUE 1
 #define FALSE 0
 
-using namespace std;
 //-----------------------------------------------------------------------
 // The time, a "keep going" control, and some constants of the model.
 //
@@ -126,17 +129,18 @@ public:
 // The event list and utilities for manipulating it.
 //--------------------------------------------------
 
+struct OrderByTime {
+	bool operator()(eventClass* lhs, eventClass* rhs) {
+		return lhs->whatTime() > rhs->whatTime();
+	}
+};
+
 class eventListClass {
 private:
-
-	struct eventListItem {
-		eventClass * data;
-		eventListItem * next;
-	};
-	eventListItem * firstEvent;
+	priority_queue<eventClass*, vector<eventClass*>, OrderByTime> eventList;
 
 public:
-	eventListClass () {firstEvent = NULL;};
+	eventListClass () {/*firstEvent = NULL;*/};
 	void insert (eventClass * event);
 	eventClass * getNext ();
 };
@@ -145,41 +149,13 @@ eventListClass * eventList;
 
 void eventListClass::insert (eventClass * event)
 {
-	eventListItem * e = new eventListItem;
-	e -> data = event;
-
-	const double T = event -> whatTime();
-	if (firstEvent == NULL || T < firstEvent -> data -> whatTime()) {
-		e -> next = firstEvent;
-		firstEvent = e;
-	}
-	else {
-		eventListItem * behind = firstEvent;
-		eventListItem * ahead = firstEvent -> next;
-		while (ahead != NULL && ahead -> data -> whatTime() <= T) {
-			behind = ahead;
-			ahead = ahead -> next;
-		}
-		behind -> next = e;
-		e -> next = ahead;
-	}
+	eventList.push(event);
 }
 
 eventClass * eventListClass::getNext ()
 {
-	// pre firstEvent not= NULL
-
-	if (firstEvent == NULL) {
-		cout << "Error! ran out of events\n";
-		return NULL;
-	}
-
-	eventClass * eventToReturn = firstEvent -> data;
-
-	eventListItem * restOfList = firstEvent -> next;
-	delete firstEvent;
-	firstEvent = restOfList;
-
+	eventClass * eventToReturn = eventList.top();
+	eventList.pop();
 	return eventToReturn;
 }
 
@@ -249,14 +225,15 @@ double pumpClass::serviceTime()
 class pumpStandClass {
 private:
 	typedef pumpClass * pumpListItem;
-	pumpListItem * pumps; // A stack of pumps
+	//pumpListItem * pumps; // A stack of pumps
+	stack<pumpClass*> pumps;
 	int numPumps;
-	int topPump;
+	//int topPump;
 
 public:
 	pumpStandClass (int);
 	int howManyPumps () {return numPumps;}; // needed for statistics
-	BOOLEAN existsAvailablePump () {return topPump >= 0;};
+	BOOLEAN existsAvailablePump () {return !pumps.empty();};
 	pumpClass * getAvailablePump ();
 	void releasePump (pumpClass *&);
 };
@@ -272,22 +249,30 @@ pumpStandClass::pumpStandClass (int N)
 	}
 
 	numPumps = N;
+	/*
 	pumps = new pumpListItem [N];
-	topPump = N - 1;
+	topPump = N - 1;*/
 
-	for (int j = 0; j < N; j++)
-		pumps[j] = new pumpClass;
+	for (int j = 0; j < N; j++){
+		cout<<"for loops"<<endl;
+		pumps.push(new pumpClass);
+	}
+		//pumps[j] = new pumpClass;
 }
 
 pumpClass * pumpStandClass::getAvailablePump ()
 // Take a pump from the set of free pumps, and return a pointer to it.
 {
-	if (topPump < 0) {
+	pumpClass *avail_pump;
+	if(pumps.empty()){
+		avail_pump = pumps.top();
+	//if (topPump < 0) {
 		cout << "Error! no pump available when needed\n";
 		return NULL;
 	}
-
-	return pumps[topPump--];
+	pumps.pop();
+	return avail_pump;
+	//return pumps[topPump--];
 }
 
 void pumpStandClass::releasePump (pumpClass *& P)
@@ -295,12 +280,12 @@ void pumpStandClass::releasePump (pumpClass *& P)
 // P is set to NULL, just to cause trouble if the caller tries
 // to reuse this pump, which is now officially free.
 {
-	if (topPump >= numPumps) {
+	if (pumps.size() >= numPumps) {
 		cout << "Error! attempt to release a free pump\n";
 		return;
 	}
-
-	pumps[++topPump] = P;
+	pumps.push(P);
+	//pumps[++topPump] = P;
 	P = NULL;
 }
 
@@ -310,14 +295,8 @@ void pumpStandClass::releasePump (pumpClass *& P)
 
 class carQueueClass {
 private:
-	struct queueItem {
-		carClass * data;
-		queueItem * next;
-	};
-
-	queueItem * firstWaitingCar, * lastWaitingCar;
-	int localQueueSize;
 	double totalEmptyQueueTime;
+	queue<carClass*> queueItem;
 
 public:
 	carQueueClass ();
@@ -331,68 +310,38 @@ carQueueClass * carQueue;
 
 carQueueClass::carQueueClass ()
 {
-	firstWaitingCar = NULL;
-	lastWaitingCar = NULL;
-	localQueueSize = 0;
 	totalEmptyQueueTime = 0.0;
 }
 
 int carQueueClass::queueSize ()
 {
-	return localQueueSize;
+	return queueItem.size();
+
 }
 
 double carQueueClass::emptyTime ()
 {
-	if (localQueueSize > 0)
-		return totalEmptyQueueTime;
-	else
-		return totalEmptyQueueTime + simulationTime;
+	if (queueSize() > 0) return totalEmptyQueueTime;
+	else return totalEmptyQueueTime + simulationTime; 
 }
 
 void carQueueClass::insert (carClass * newestCar)
 {
-	queueItem * newQueueItem;
-	newQueueItem = new queueItem;
-	newQueueItem -> data = newestCar;
-	newQueueItem -> next = NULL;
-
-	if (lastWaitingCar == NULL) {
-		// assert queueSize = 0
-		firstWaitingCar = newQueueItem;
+	if (queueSize() == 0) {
 		totalEmptyQueueTime += simulationTime;
 	}
-	else {
-		// assert queueSize > 0
-		lastWaitingCar -> next = newQueueItem;
-	}
-
-	lastWaitingCar = newQueueItem;
-	localQueueSize += 1;
+	queueItem.push(newestCar);
 }
 
 carClass * carQueueClass::getNext ()
 {
 	// pre queueSize > 0 and firstWaitingCar not= NULL
-
-	if (firstWaitingCar == NULL) {
-		cout << "Error! car queue unexpectedly empty\n";
+	if (queueSize() == 0) {
 		return NULL;
 	}
-
-	carClass * carToReturn = firstWaitingCar -> data;
-
-	localQueueSize -= 1;
-	queueItem * restOfList = firstWaitingCar -> next;
-	delete firstWaitingCar;
-	firstWaitingCar = restOfList;
-
-	if (firstWaitingCar == NULL) {
-		// empty queue: update the pointer to the end of queue too!
-		lastWaitingCar = NULL;
-		totalEmptyQueueTime -= simulationTime;
-	}
-
+	carClass* carToReturn = queueItem.front();
+	queueItem.pop();
+	
 	return carToReturn;
 }
 
@@ -402,7 +351,7 @@ carClass * carQueueClass::getNext ()
 
 class statsClass {
 private:
-	int TotalArrivals, customersServed, balkingCustomers;
+	int TotalArrivals, customersServed, balkingCustomers, maxSize;
 	double TotalLitresSold, TotalLitresMissed, TotalWaitingTime,
 		TotalServiceTime;
 
@@ -411,6 +360,7 @@ public:
 	void countArrival () {TotalArrivals += 1;};
 	void accumSale (double litres);
 	void accumBalk (double litres);
+	void accumMaxSize ();
 	void accumWaitingTime (double interval) {TotalWaitingTime += interval;};
 	void accumServiceTime (double interval) {TotalServiceTime += interval;};
 	void snapshot ();
@@ -423,6 +373,7 @@ statsClass::statsClass ()
 	TotalArrivals = 0;
 	customersServed = 0;
 	balkingCustomers = 0;
+	maxSize = 0;
 	TotalLitresSold = 0.0;
 	TotalLitresMissed = 0.0;
 	TotalWaitingTime = 0.0;
@@ -439,6 +390,12 @@ void statsClass::accumBalk (double litres)
 {
 	balkingCustomers += 1;
 	TotalLitresMissed += litres;
+}
+
+void statsClass::accumMaxSize()
+{
+	if (carQueue->queueSize()>maxSize) 
+		maxSize += 1;
 }
 
 void statsClass::snapshot ()
@@ -461,7 +418,8 @@ void statsClass::snapshot ()
 		/ (pumpStand -> howManyPumps() * simulationTime));
 	printf ("%9.2f", TotalLitresSold * profit
 		- cost * pumpStand -> howManyPumps());
-	printf ("%7.2f\n", TotalLitresMissed * profit);
+	printf ("%7.2f", TotalLitresMissed * profit);
+	printf ("%7i\n", maxSize);
 }
 
 //-----------------------------------------
@@ -560,7 +518,9 @@ void arrivalClass::makeItHappen ()
 		else
 			carQueue -> insert (arrivingCar);
 	}
-
+	
+	stats->accumMaxSize();
+	
 	// schedule the next arrival, reusing the current event object
 	setTime (simulationTime + interarrivalTime());
 	eventList -> insert (this);
@@ -667,27 +627,25 @@ int main()
 
 	// Print column headings for periodic progress reports and final report
 
-	printf ("%9s%7s%8s%9s%8s%7s%9s%7s%8s%7s\n", " Current", "Total ",
+	printf ("%9s%7s%8s%9s%8s%7s%9s%7s%8s%7s%8s\n", " Current", "Total ",
 		"NoQueue", "Car->Car", "Average", "Number", "Average", "Pump ",
-		"Total", " Lost ");
-	printf ("%9s%7s%8s%9s%8s%7s%9s%7s%8s%7s\n", "   Time ", "Cars ",
+		"Total", " Lost ", " Max ");
+	printf ("%9s%7s%8s%9s%8s%7s%9s%7s%8s%7s%8s\n", "   Time ", "Cars ",
 		"Fraction", "  Time  ", " Litres ", "Balked", "  Wait ",
-		"Usage ", "Profit", "Profit");
-	for (int i = 0; i < 79; i++)
+		"Usage ", "Profit", "Profit", "Size");
+	for (int i = 0; i < 87; i++)
 		cout << "-";
 	cout << "\n";
 
 	//------------------------
 	// The "clock driver" loop
 	//------------------------
-	time_t t1 = time(NULL), t2;
+
 	while (simulating) {
 		eventClass * currentEvent = eventList -> getNext ();
 		simulationTime = currentEvent -> whatTime();
 		currentEvent -> makeItHappen();
 	}
-	t2 = time(NULL);
-	double dif = difftime(t1, t2);//CLOCKS_PER_SEC;
-	cout<<"time running = "<<dif<<endl;
+
 	return 0;
 }
